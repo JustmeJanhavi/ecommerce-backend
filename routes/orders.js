@@ -1,18 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require('mysql2');
 require('dotenv').config();
 
-// ✅ DB connection
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
+// ✅ Use shared connection pool
+const pool = require('./db');
 
 // ✅ GET: all orders for a store
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const storeId = req.query.storeId;
   if (!storeId) return res.status(400).json({ error: 'storeId is required in query' });
 
@@ -24,17 +18,17 @@ router.get('/', (req, res) => {
     ORDER BY o.date_ordered DESC
   `;
 
-  db.query(sql, [storeId], (err, results) => {
-    if (err) {
-      console.error('🔴 Error fetching orders:', err.message);
-      return res.status(500).json({ error: 'Database error while fetching orders' });
-    }
+  try {
+    const [results] = await pool.query(sql, [storeId]);
     res.json(results);
-  });
+  } catch (err) {
+    console.error('🔴 Error fetching orders:', err.message);
+    res.status(500).json({ error: 'Database error while fetching orders' });
+  }
 });
 
 // ✅ POST: create new order with store_id
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { customer_id, total_amount, status, items, store_id } = req.body;
 
   if (!customer_id || !total_amount || !status || !store_id || !Array.isArray(items) || items.length === 0) {
@@ -46,42 +40,30 @@ router.post('/', (req, res) => {
     VALUES (NOW(), ?, ?, ?)
   `;
 
-  db.query(orderSql, [total_amount, customer_id, status], (err, result) => {
-    if (err) {
-      console.error('🔴 Error inserting into orders:', err.message);
-      return res.status(500).json({ error: 'Database error while inserting order' });
-    }
-
+  try {
+    const [result] = await pool.query(orderSql, [total_amount, customer_id, status]);
     const orderId = result.insertId;
 
     const itemSql = `
       INSERT INTO order_items (order_id, product_id, quantity, store_id)
       VALUES ?
     `;
+    const values = items.map(item => [orderId, item.product_id, item.quantity, store_id]);
 
-    const values = items.map(item => [
-      orderId,
-      item.product_id,
-      item.quantity,
-      store_id
-    ]);
+    await pool.query(itemSql, [values]);
 
-    db.query(itemSql, [values], (itemErr) => {
-      if (itemErr) {
-        console.error('🔴 Error inserting into order_items:', itemErr.message);
-        return res.status(500).json({ error: 'Database error while inserting order items' });
-      }
-
-      res.status(201).json({
-        message: '✅ Order and items saved successfully',
-        orderId
-      });
+    res.status(201).json({
+      message: '✅ Order and items saved successfully',
+      orderId
     });
-  });
+  } catch (err) {
+    console.error('🔴 Error saving order:', err.message);
+    res.status(500).json({ error: 'Database error while saving order or items' });
+  }
 });
 
 // ✅ PUT: update order status and insert into sales if Delivered
-router.put('/:orderId/status', (req, res) => {
+router.put('/:orderId/status', async (req, res) => {
   const { orderId } = req.params;
   const { status, storeId } = req.body;
 
@@ -96,11 +78,8 @@ router.put('/:orderId/status', (req, res) => {
     WHERE o.order_id = ? AND c.store_id = ?
   `;
 
-  db.query(updateSql, [status, orderId, storeId], async (err, result) => {
-    if (err) {
-      console.error('🔴 Error updating order status:', err.message);
-      return res.status(500).json({ error: 'Database error while updating order status' });
-    }
+  try {
+    const [result] = await pool.query(updateSql, [status, orderId, storeId]);
 
     if (result.affectedRows === 0) {
       return res.status(403).json({ error: 'Unauthorized: Order not found for this store or not allowed' });
@@ -125,49 +104,42 @@ router.put('/:orderId/status', (req, res) => {
       WHERE oi.order_id = ? AND c.store_id = ?
     `;
 
-    db.query(fetchItemsSql, [orderId, storeId], async (itemErr, items) => {
-      if (itemErr) {
-        console.error('🔴 Error fetching order items for sales:', itemErr.message);
-        return res.status(500).json({ error: 'Error preparing sales record' });
-      }
+    const [items] = await pool.query(fetchItemsSql, [orderId, storeId]);
 
-      if (!items || items.length === 0) {
-        return res.status(404).json({ error: 'No order items found for this order' });
-      }
+    if (!items || items.length === 0) {
+      return res.status(404).json({ error: 'No order items found for this order' });
+    }
 
-      const salesValues = items.map(item => [
-        item.date_ordered,
-        'online',
-        item.product_id,
-        item.quantity,
-        item.price,
-        item.price * item.quantity,
-        storeId,
-        item.customer_id
-      ]);
+    const salesValues = items.map(item => [
+      item.date_ordered,
+      'online',
+      item.product_id,
+      item.quantity,
+      item.price,
+      item.price * item.quantity,
+      storeId,
+      item.customer_id
+    ]);
 
-      const insertSalesSql = `
-        INSERT INTO sales (
-          sale_date, sale_type, product_id,
-          quantity_sold, unit_price_at_sale,
-          total_sale_amount, store_id, customer_id
-        ) VALUES ?
-      `;
+    const insertSalesSql = `
+      INSERT INTO sales (
+        sale_date, sale_type, product_id,
+        quantity_sold, unit_price_at_sale,
+        total_sale_amount, store_id, customer_id
+      ) VALUES ?
+    `;
 
-      db.query(insertSalesSql, [salesValues], (salesErr) => {
-        if (salesErr) {
-          console.error('🔴 Error inserting into sales:', salesErr.message);
-          return res.status(500).json({ error: 'Failed to record sales data' });
-        }
+    await pool.query(insertSalesSql, [salesValues]);
 
-        return res.json({ message: '✅ Order marked as Delivered and sales recorded' });
-      });
-    });
-  });
+    res.json({ message: '✅ Order marked as Delivered and sales recorded' });
+  } catch (err) {
+    console.error('🔴 Error processing order status update:', err.message);
+    res.status(500).json({ error: 'Server error while updating order and recording sales' });
+  }
 });
 
 // ✅ GET: products for a store
-router.get('/products', (req, res) => {
+router.get('/products', async (req, res) => {
   const storeId = req.query.storeId;
   if (!storeId) {
     return res.status(400).json({ error: 'storeId is required in query' });
@@ -175,30 +147,29 @@ router.get('/products', (req, res) => {
 
   const sql = `SELECT * FROM products WHERE store_id = ?`;
 
-  db.query(sql, [storeId], (err, results) => {
-    if (err) {
-      console.error('🔴 Error fetching products:', err.message);
-      return res.status(500).json({ error: 'Database error while fetching products' });
-    }
-
+  try {
+    const [results] = await pool.query(sql, [storeId]);
     res.json(results);
-  });
+  } catch (err) {
+    console.error('🔴 Error fetching products:', err.message);
+    res.status(500).json({ error: 'Database error while fetching products' });
+  }
 });
 
 // ✅ NEW: GET customers filtered by storeId
-router.get('/customers_orders', (req, res) => {
+router.get('/customers_orders', async (req, res) => {
   const storeId = req.query.storeId;
   if (!storeId) return res.status(400).json({ error: 'storeId is required in query' });
 
   const sql = `SELECT customer_id, customer_name FROM customers WHERE store_id = ?`;
 
-  db.query(sql, [storeId], (err, results) => {
-    if (err) {
-      console.error('🔴 Error fetching customers:', err.message);
-      return res.status(500).json({ error: 'Database error while fetching customers' });
-    }
+  try {
+    const [results] = await pool.query(sql, [storeId]);
     res.json(results);
-  });
+  } catch (err) {
+    console.error('🔴 Error fetching customers:', err.message);
+    res.status(500).json({ error: 'Database error while fetching customers' });
+  }
 });
 
 module.exports = router;

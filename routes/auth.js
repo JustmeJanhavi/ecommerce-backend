@@ -5,13 +5,8 @@ const mysql = require('mysql2/promise');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-// DB pool
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
+const pool = require('./db');
+
 
 // --- Signup (plain-text password) ---
 router.post('/signup', async (req, res) => {

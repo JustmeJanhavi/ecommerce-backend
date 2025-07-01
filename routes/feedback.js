@@ -1,16 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-// MySQL connection
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
+// ✅ Use shared connection pool
+const pool = require('./db');
 
 // Middleware to verify JWT and attach user info
 function authenticateToken(req, res, next) {
@@ -29,7 +23,7 @@ function authenticateToken(req, res, next) {
 }
 
 // GET /api/feedback - fetch feedback only for the logged-in shop owner's store
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   const { store_id, user_type } = req.user;
 
   // Optional: Only allow shop_owner to access
@@ -52,14 +46,13 @@ router.get('/', authenticateToken, (req, res) => {
     ORDER BY f.review_date DESC
   `;
 
-  db.query(sql, [store_id], (err, results) => {
-    if (err) {
-      console.error('Error fetching feedback:', err);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-
+  try {
+    const [results] = await pool.query(sql, [store_id]);
     res.json(results);
-  });
+  } catch (err) {
+    console.error('Error fetching feedback:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 module.exports = router;

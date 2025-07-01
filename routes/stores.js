@@ -1,20 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-
-// ✅ DB connection
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
+// ✅ Use shared MySQL pool
+const pool = require('./db'); // Assuming ./db exports the pool from mysql2/promise
 
 // ✅ Multer setup
 const storage = multer.diskStorage({
@@ -27,8 +20,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     cb(null, file.originalname);
-  }
-  ,
+  },
 });
 const upload = multer({ storage });
 
@@ -47,76 +39,82 @@ function authenticateToken(req, res, next) {
 }
 
 // ✅ GET /api/adminstore — Get store data for logged-in store
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   const { store_id } = req.user;
 
   const query = `SELECT * FROM stores WHERE store_id = ?`;
-  db.query(query, [store_id], (err, results) => {
-    if (err) {
-      console.error('❌ Error fetching store:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    const [results] = await pool.query(query, [store_id]);
+
     if (results.length === 0) {
       return res.status(404).json({ error: 'Store not found' });
     }
     res.json({ store: results[0] });
-  });
+  } catch (err) {
+    console.error('❌ Error fetching store:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // ✅ PUT /api/adminstore — Update store details for logged-in store
-router.put('/', authenticateToken, upload.fields([
-  { name: 'landing_image', maxCount: 1 },
-  { name: 'store_photo', maxCount: 1 },
-]), (req, res) => {
-  const { store_id } = req.user;
-  const {
-    store_name,
-    store_tagline,
-    store_address,
-    instagram_link,
-    facebook_link,
-    store_email,
-    store_desc
-  } = req.body;
+router.put(
+  '/',
+  authenticateToken,
+  upload.fields([
+    { name: 'landing_image', maxCount: 1 },
+    { name: 'store_photo', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const { store_id } = req.user;
+    const {
+      store_name,
+      store_tagline,
+      store_address,
+      instagram_link,
+      facebook_link,
+      store_email,
+      store_desc,
+    } = req.body;
 
-  const landingImage = req.files['landing_image']
-    ? `uploads/${req.files['landing_image'][0].filename}`
-    : null;
+    const landingImage = req.files['landing_image']
+      ? `uploads/${req.files['landing_image'][0].filename}`
+      : null;
 
-  const storePhoto = req.files['store_photo']
-    ? `uploads/${req.files['store_photo'][0].filename}`
-    : null;
+    const storePhoto = req.files['store_photo']
+      ? `uploads/${req.files['store_photo'][0].filename}`
+      : null;
 
-  const fields = [];
-  const values = [];
+    const fields = [];
+    const values = [];
 
-  if (store_name) fields.push('store_name = ?'), values.push(store_name);
-  if (store_tagline) fields.push('store_tagline = ?'), values.push(store_tagline);
-  if (store_address) fields.push('store_address = ?'), values.push(store_address);
-  if (instagram_link) fields.push('instagram_link = ?'), values.push(instagram_link);
-  if (facebook_link) fields.push('facebook_link = ?'), values.push(facebook_link);
-  if (store_email) fields.push('store_email = ?'), values.push(store_email);
-  if (store_desc) fields.push('store_desc = ?'), values.push(store_desc);
-  if (landingImage) fields.push('landing_image = ?'), values.push(landingImage);
-  if (storePhoto) fields.push('store_photo = ?'), values.push(storePhoto);
+    if (store_name) (fields.push('store_name = ?'), values.push(store_name));
+    if (store_tagline) (fields.push('store_tagline = ?'), values.push(store_tagline));
+    if (store_address) (fields.push('store_address = ?'), values.push(store_address));
+    if (instagram_link) (fields.push('instagram_link = ?'), values.push(instagram_link));
+    if (facebook_link) (fields.push('facebook_link = ?'), values.push(facebook_link));
+    if (store_email) (fields.push('store_email = ?'), values.push(store_email));
+    if (store_desc) (fields.push('store_desc = ?'), values.push(store_desc));
+    if (landingImage) (fields.push('landing_image = ?'), values.push(landingImage));
+    if (storePhoto) (fields.push('store_photo = ?'), values.push(storePhoto));
 
-  fields.push('updated_at = NOW()');
-  values.push(store_id); // For WHERE clause
+    fields.push('updated_at = NOW()');
+    values.push(store_id); // For WHERE clause
 
-  const query = `UPDATE stores SET ${fields.join(', ')} WHERE store_id = ?`;
+    const query = `UPDATE stores SET ${fields.join(', ')} WHERE store_id = ?`;
 
-  db.query(query, values, (err, result) => {
-    if (err) {
+    try {
+      const [result] = await pool.query(query, values);
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: 'Store not found or no changes' });
+      }
+
+      res.json({ message: '✅ Store updated successfully' });
+    } catch (err) {
       console.error('❌ Error updating store:', err);
-      return res.status(500).json({ error: 'Failed to update store' });
+      res.status(500).json({ error: 'Failed to update store' });
     }
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Store not found or no changes' });
-    }
-
-    res.json({ message: '✅ Store updated successfully' });
-  });
-});
+  }
+);
 
 module.exports = router;
