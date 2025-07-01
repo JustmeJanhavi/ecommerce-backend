@@ -51,16 +51,28 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ message: 'Email and password are required' });
 
   try {
-    const [users] = await pool.query('SELECT user_id, email, password, user_type, store_id FROM users WHERE email = ?', [email]);
+    const [users] = await pool.query(
+      'SELECT user_id, email, password, user_type, store_id FROM users WHERE email = ?',
+      [email]
+    );
 
     if (users.length === 0)
       return res.status(401).json({ message: 'Invalid credentials' });
 
     const user = users[0];
 
-    // Compare plain-text password directly
     if (password !== user.password)
       return res.status(401).json({ message: 'Invalid credentials' });
+
+    const token = jwt.sign(
+      {
+        user_id: user.user_id,
+        store_id: user.store_id,
+        user_type: user.user_type
+      },
+      process.env.JWT_SECRET || 'fallback-secret', // ← USE ENV HERE
+      { expiresIn: '1h' }
+    );
 
     res.status(200).json({
       message: 'Login successful!',
@@ -68,23 +80,16 @@ router.post('/login', async (req, res) => {
         id: user.user_id,
         email: user.email,
         userType: user.user_type,
-        storeId: user.store_id // ✅ added
+        storeId: user.store_id
       },
-      token: jwt.sign(
-        {
-          user_id: user.user_id,
-          store_id: user.store_id,
-          user_type: user.user_type
-        },
-        'your-secret-key',
-        { expiresIn: '1h' }
-      )
+      token
     });
-    
+
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Server error during login' });
+    console.error('❌ Login crash:', err); // ← PRINT ACTUAL ERROR
+    res.status(500).json({ message: 'Server error during login' });
   }
 });
+
 
 module.exports = router;
