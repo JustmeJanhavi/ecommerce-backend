@@ -1,38 +1,7 @@
-const express = require('express');
-const cors = require('cors');
-const productsRoute = require('./routes/products');
-const customerRoute = require('./routes/customers');
-const ordersRoute = require('./routes/orders');
-const customerORoute = require('./routes/customers_orders');
-const authRoute = require('./routes/auth');
-const feedbackRoute = require('./routes/feedback');
-const shopRoutes = require('./routes/shopRoutes');
-const cartRoutes = require('./routes/carts');
-const statRoute = require('./routes/statistics');
-const storeRoute = require('./routes/stores');
-const storeDetailsRoute = require('./routes/storeDetails');
-const customerAuthRoutes = require('./routes/cus_auth');
-const customerOrderPlaced = require('./routes/orderplaced');
-const overviewRoute = require('./routes/overview');
-const app = express();
-const PORT = 5000;
-app.use(cors());
-app.use(express.json());
-app.use('/uploads', express.static('uploads'));
-app.use('/api', cartRoutes);
-app.use('/api/products', productsRoute);
-app.use('/api/store', storeDetailsRoute);
-app.use('/api/customers', customerRoute);
-app.use('/api', shopRoutes); // Mount public shop routes here
-app.use('/api/orders', ordersRoute); 
-app.use('/api/customers_orders', customerORoute);
-app.use('/api/feedback', feedbackRoute);
-app.use('/api/auth', authRoute);
-app.use('/api/customer/auth', customerAuthRoutes);
-app.use('/api',customerOrderPlaced);
-app.use('/api/statistics',statRoute);
-app.use('/api/stats/overview/',overviewRoute);
-app.use('/api/adminstore',storeRoute);
+const app = require('./api/index');
+
+// Local development only
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

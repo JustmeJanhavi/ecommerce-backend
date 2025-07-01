@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 // DB pool
 const pool = mysql.createPool({

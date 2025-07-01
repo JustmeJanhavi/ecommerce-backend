@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+require('dotenv').config();
+
 // DB Connection
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
