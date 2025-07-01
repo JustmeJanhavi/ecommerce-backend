@@ -4,10 +4,10 @@ const mysql = require('mysql2');
 
 // DB connection
 const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'e-commerce-db',
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
 });
 
 // GET /api/statistics?storeId=201 — Total stats
