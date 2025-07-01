@@ -24,23 +24,23 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// ✅ JWT Authentication Middleware
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer <token>
+// // ✅ JWT Authentication Middleware
+// function authenticateToken(req, res, next) {
+//   const authHeader = req.headers['authorization'];
+//   const token = authHeader && authHeader.split(' ')[1]; // Bearer <token>
 
-  if (!token) return res.status(401).json({ message: 'Token missing' });
+//   if (!token) return res.status(401).json({ message: 'Token missing' });
 
-  jwt.verify(token, 'your-secret-key', (err, decoded) => {
-    if (err) return res.status(403).json({ message: 'Invalid token' });
-    req.user = decoded; // { user_id, store_id, user_type }
-    next();
-  });
-}
+//   jwt.verify(token, 'your-secret-key', (err, decoded) => {
+//     if (err) return res.status(403).json({ message: 'Invalid token' });
+//     req.user = decoded; // { user_id, store_id, user_type }
+//     next();
+//   });
+// }
 
 // ✅ GET /api/adminstore — Get store data for logged-in store
-router.get('/', authenticateToken, async (req, res) => {
-  const { store_id } = req.user;
+router.get('/', async (req, res) => {
+  const store_id = req.query.storeId;
 
   const query = `SELECT * FROM stores WHERE store_id = ?`;
   try {
@@ -59,13 +59,12 @@ router.get('/', authenticateToken, async (req, res) => {
 // ✅ PUT /api/adminstore — Update store details for logged-in store
 router.put(
   '/',
-  authenticateToken,
   upload.fields([
     { name: 'landing_image', maxCount: 1 },
     { name: 'store_photo', maxCount: 1 },
   ]),
   async (req, res) => {
-    const { store_id } = req.user;
+    const store_id = req.query.storeId;
     const {
       store_name,
       store_tagline,

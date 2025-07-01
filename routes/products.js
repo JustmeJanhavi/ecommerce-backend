@@ -26,22 +26,22 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Middleware to verify JWT and attach user info
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer <token>
-  if (!token) return res.status(401).json({ message: 'Token missing' });
+// // Middleware to verify JWT and attach user info
+// function authenticateToken(req, res, next) {
+//   const authHeader = req.headers['authorization'];
+//   const token = authHeader && authHeader.split(' ')[1]; // Bearer <token>
+//   if (!token) return res.status(401).json({ message: 'Token missing' });
 
-  jwt.verify(token, 'your-secret-key', (err, decoded) => {
-    if (err) return res.status(403).json({ message: 'Invalid token' });
-    req.user = decoded; // contains user_id, store_id, user_type
-    next();
-  });
-}
+//   jwt.verify(token, 'your-secret-key', (err, decoded) => {
+//     if (err) return res.status(403).json({ message: 'Invalid token' });
+//     req.user = decoded; // contains user_id, store_id, user_type
+//     next();
+//   });
+// }
 
 // ✅ GET /api/products - Products for logged-in store
-router.get('/', authenticateToken, async (req, res) => {
-  const { store_id } = req.user;
+router.get('/', async (req, res) => {
+  const store_id = req.query.storeId;
   const query = `
     SELECT 
       p.*, 
@@ -67,8 +67,8 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // ✅ GET /api/products/categories
-router.get('/categories', authenticateToken, async (req, res) => {
-  const { store_id } = req.user;
+router.get('/categories',  async (req, res) => {
+  const store_id = req.query.storeId;
   const query = `SELECT DISTINCT product_category AS name FROM products WHERE store_id = ?`;
 
   try {
@@ -80,9 +80,10 @@ router.get('/categories', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ GET /api/products/category-counts
-router.get('/category-counts', authenticateToken, async (req, res) => {
-  const { store_id } = req.user;
+router.get('/category-counts', async (req, res) => {
+  const store_id = req.query.storeId;
+  if (!store_id) return res.status(400).json({ error: 'storeId is required' });
+
   const query = `
     SELECT product_category AS name, COUNT(product_id) AS count
     FROM products
@@ -99,11 +100,12 @@ router.get('/category-counts', authenticateToken, async (req, res) => {
   }
 });
 
+
 // ✅ POST /api/products/add
-router.post('/add', authenticateToken, upload.single('image'), async (req, res) => {
+router.post('/add',  upload.single('image'), async (req, res) => {
   const { product_name, price, product_category, description, stock_quantity } = req.body;
-  const { store_id } = req.user;
-  const image_url = req.file ? `uploads/${req.file.filename}` : null;
+  const store_id = req.query.storeId;
+  const image_url = req.file ? req.file.filename : null;
 
   const query = `
     INSERT INTO products
@@ -133,8 +135,8 @@ router.post('/add', authenticateToken, upload.single('image'), async (req, res) 
 });
 
 // ✅ GET /api/products/filter
-router.get('/filter', authenticateToken, async (req, res) => {
-  const { store_id } = req.user;
+router.get('/filter', async (req, res) => {
+  const store_id = req.query.storeId;
   const { category, minPrice, maxPrice, inStock, search, startDate, endDate, minSold, maxSold } = req.query;
 
   let query = `
