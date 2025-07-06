@@ -24,7 +24,7 @@ router.post('/signup', async (req, res) => {
     // Save password directly (not hashed)
     const [result] = await pool.query(
       'INSERT INTO users (email, password, user_type, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())',
-      [email, password, 'customer']
+      [email, password, 'shop_owner']
     );
 
     res.status(201).json({
